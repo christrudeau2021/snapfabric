@@ -1,0 +1,102 @@
+#!/bin/bash
+# snapfabric — hardlinked rsync snapshots across a mixed estate.
+#
+# This is a dispatcher and nothing else. Every subcommand is a standalone script
+# under agents/common/ that can still be run directly; that property is worth
+# keeping, because when a scheduled job fails at 03:00 the thing you want to run
+# by hand is the exact script the scheduler ran, not a wrapper around it.
+#
+#   snapfabric <command> [options]
+
+set -uo pipefail
+
+VERSION="1.0.0"
+
+# --- locate the agents ---------------------------------------------------------
+# `readlink -f` does not exist on macOS, and this is installed as a symlink from
+# ~/.local/bin, so resolve the chain by hand. bash 3.2: no readlink -f, no
+# realpath, no associative arrays.
+SELF="$0"
+while [ -L "$SELF" ]; do
+  _dir=$(cd -P "$(dirname "$SELF")" && pwd)
+  SELF=$(readlink "$SELF")
+  case "$SELF" in /*) ;; *) SELF="$_dir/$SELF" ;; esac
+done
+BIN_DIR=$(cd -P "$(dirname "$SELF")" && pwd)
+ROOT=$(cd -P "$BIN_DIR/.." && pwd)
+AGENTS="$ROOT/agents/common"
+
+[ -d "$AGENTS" ] || {
+  echo "snapfabric: cannot find agents/ (looked in $AGENTS)" >&2
+  echo "  the dispatcher must stay alongside the agents/ directory it came with" >&2
+  exit 2
+}
+
+B=$'\033[1m'; D=$'\033[2m'; N=$'\033[0m'
+[ -t 1 ] || { B=""; D=""; N=""; }
+
+usage(){
+  cat <<USAGE
+${B}snapfabric${N} $VERSION — hardlinked rsync snapshots across a mixed estate
+
+${B}usage:${N} snapfabric <command> [options]
+
+${B}setting up${N}
+  discover              find candidate hosts on this network      ${D}(read-only)${N}
+  plan                  design the whole fabric, write the config ${D}(writes config only)${N}
+  add-node              onboard ONE new host into a live fabric
+  provision             install keys, agents and schedules from the config
+
+${B}running it${N}
+  status                one-screen health report                  ${D}(read-only)${N}
+  verify                prove a restore works, by doing one       ${D}(read-only)${N}
+  doctor                health check and self-repair; run from a non-hub machine
+
+${B}other${N}
+  version               print the version
+  help [command]        show a command's own --help
+
+Config lives in ${D}\${SNAPFABRIC_CONF_DIR:-~/.config/snapfabric}${N}.
+Start with ${D}snapfabric plan${N}, or read docs/QUICKSTART.md.
+USAGE
+}
+
+# Map a command to its script. A case statement rather than constructing a path
+# from the argument: this dispatcher takes untrusted argv, and building an exec
+# path out of it is how a dispatcher turns into an arbitrary-script runner.
+script_for(){
+  case "$1" in
+    discover)          echo "$AGENTS/snapfabric-discover.sh" ;;
+    plan)              echo "$AGENTS/snapfabric-plan.sh" ;;
+    add-node|add)      echo "$AGENTS/snapfabric-addnode.sh" ;;
+    provision)         echo "$AGENTS/snapfabric-provision.sh" ;;
+    verify)            echo "$AGENTS/snapfabric-verify.sh" ;;
+    status)            echo "$AGENTS/snapfabric-status.sh" ;;
+    doctor|watchdog)   echo "$AGENTS/snapfabric-doctor.sh" ;;
+    *)                 return 1 ;;
+  esac
+}
+
+CMD="${1:-}"; [ $# -gt 0 ] && shift
+
+case "$CMD" in
+  ""|-h|--help|help)
+    if [ $# -gt 0 ] && s=$(script_for "$1"); then exec bash "$s" --help; fi
+    usage; exit 0 ;;
+  -V|--version|version)
+    echo "snapfabric $VERSION"; exit 0 ;;
+esac
+
+s=$(script_for "$CMD") || {
+  echo "snapfabric: unknown command '$CMD'" >&2
+  echo "  try: snapfabric help" >&2
+  exit 2
+}
+
+[ -f "$s" ] || {
+  echo "snapfabric: '$CMD' is not available in this install" >&2
+  echo "  expected: $s" >&2
+  exit 2
+}
+
+exec bash "$s" "$@"

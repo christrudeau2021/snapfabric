@@ -1,0 +1,100 @@
+name: ci
+
+# Both suites, on both platforms. They existed for a while and ran only when
+# someone remembered, which is how a Linux-only defect (the cron fallback
+# writing to the real crontab) survived: every run happened on a Mac.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  shellcheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: shellcheck
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck
+          # SC1090/SC1091: configs and libraries are sourced from paths only
+          # known at runtime, which is the whole design -- not a finding.
+          shellcheck -e SC1090,SC1091 -S warning \
+            bin/snapfabric install.sh \
+            agents/common/*.sh agents/macos/*.sh tests/*.sh
+
+  offline:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: rsync version
+        run: rsync --version | head -1
+      # Snapshot the two things the suite has previously escaped into, so a
+      # regression shows up as a diff rather than as someone's machine changing.
+      - name: record home state
+        run: |
+          crontab -l > /tmp/cron.before 2>/dev/null || : > /tmp/cron.before
+          find "$HOME" -maxdepth 4 -name 'local.snapfabric*' > /tmp/units.before 2>/dev/null || :
+      - name: offline suite
+        run: bash tests/test-constraints.sh
+      - name: the suite must not have touched this machine
+        run: |
+          crontab -l > /tmp/cron.after 2>/dev/null || : > /tmp/cron.after
+          find "$HOME" -maxdepth 4 -name 'local.snapfabric*' > /tmp/units.after 2>/dev/null || :
+          diff /tmp/cron.before /tmp/cron.after \
+            || { echo "::error::the test suite modified the real crontab"; exit 1; }
+          diff /tmp/units.before /tmp/units.after \
+            || { echo "::error::the test suite left scheduler units in \$HOME"; exit 1; }
+
+  integration:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: record home state
+        run: |
+          crontab -l > /tmp/cron.before 2>/dev/null || : > /tmp/cron.before
+          cp "$HOME/.ssh/authorized_keys" /tmp/ak.before 2>/dev/null || : > /tmp/ak.before
+      - name: integration suite
+        # Stands up its own sshd on a high port in a temp directory. It reports
+        # SKIPPED rather than passing if it cannot, and a suite that reports
+        # all-green having tested nothing is worse than one that fails.
+        run: bash tests/test-provision.sh
+      - name: the suite must not have touched this machine
+        run: |
+          crontab -l > /tmp/cron.after 2>/dev/null || : > /tmp/cron.after
+          cp "$HOME/.ssh/authorized_keys" /tmp/ak.after 2>/dev/null || : > /tmp/ak.after
+          diff /tmp/cron.before /tmp/cron.after \
+            || { echo "::error::the test suite modified the real crontab"; exit 1; }
+          diff /tmp/ak.before /tmp/ak.after \
+            || { echo "::error::the test suite modified the real authorized_keys"; exit 1; }
+
+  install:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      # The stranger's path: a clean clone, an install, and every advertised
+      # command answering. `status` and `doctor` were broken this way for
+      # everyone who had not hand-built their hub, and nothing noticed.
+      - name: install and exercise the command surface
+        run: |
+          ./install.sh --prefix "$RUNNER_TEMP/sf"
+          "$RUNNER_TEMP/sf/bin/snapfabric" version
+          for c in discover plan add-node provision verify status doctor; do
+            "$RUNNER_TEMP/sf/bin/snapfabric" help "$c" >/dev/null \
+              || { echo "::error::snapfabric $c has no working --help"; exit 1; }
+          done

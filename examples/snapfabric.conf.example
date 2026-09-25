@@ -1,0 +1,78 @@
+# snapfabric configuration — copy to snapfabric.conf and edit.
+#
+# Nothing in snapfabric is hardcoded to a particular network. Every host,
+# volume, path and service name comes from this file.
+#
+# Keep it mode 0600 and owned by you: it is sourced as shell, so write access
+# to it is equivalent to code execution. See docs/SECURITY.md.
+
+# ---------------------------------------------------------------- the hub
+# The machine with the backup drive attached.
+HUB_USER="youruser"
+HUB_HOST="192.0.2.10"                  # IP or hostname
+HUB_KEY="$HOME/.ssh/snapfabric_hub"
+
+# Where snapshots live. Must be on the backup drive, NOT the hub's system disk —
+# snapfabric refuses to run if it detects the system disk, because a missing
+# drive leaves the mount point behind as an ordinary directory that would
+# silently fill your boot volume.
+BACKUP_ROOT="/Volumes/Backups"
+
+# ------------------------------------------------------------- volumes
+# Volumes snapfabric may mount or repair. Anything not listed here is refused,
+# including by the hub-side verb API. Keep this tight.
+# NEWLINE-separated. A macOS volume name commonly contains spaces
+# (Apple names a Time Machine volume "Backups of <computer>" by default,
+# spaces and all), and a space-separated list
+# cannot hold one -- the same reason SOURCES is newline-separated.
+MANAGED_VOLUMES="Backups"
+
+# ------------------------------------------------------------- hosts
+# Hosts to back up. These names become directory names under BACKUP_ROOT.
+BACKUP_HOSTS="fileserver workstation nas"
+
+# Per-host freshness limits in hours: how stale a backup may get before the
+# watchdog treats it as broken. Match these to each host's schedule.
+FRESHNESS="fileserver:30 workstation:6 nas:30"
+
+# ------------------------------------------------------------- scheduling
+# Each host's scheduled job is named PULL_LABEL_PREFIX + "." + hostname, e.g.
+# "com.example.snapfabric.pull.fileserver". Set this to match whatever your
+# existing jobs are called if you are adopting snapfabric onto a running setup —
+# renaming live scheduler jobs is disruptive and unnecessary.
+PULL_LABEL_PREFIX="com.example.snapfabric.pull"
+
+# Hosts that PUSH to the hub rather than being pulled by it (typically laptops,
+# which are not always reachable). The hub has no job to trigger for these, so
+# the watchdog will report them stale without trying to start them.
+PUSH_HOSTS=""
+
+# ------------------------------------------------- optional: Time Machine
+# Only relevant on a macOS hub also serving Time Machine over SMB. Leave both
+# empty to disable. Time Machine itself is not set up by snapfabric; these
+# only let `status` and `doctor` watch an advertiser you configured yourself.
+#   ADVERTISER_PATTERN — pgrep pattern used to tell whether it is running
+#   ADVERTISER_LABEL   — the launchd label used to restart it
+ADVERTISER_PATTERN=""
+ADVERTISER_LABEL=""
+
+# ------------------------------------------------------------- tuning
+# Throughput cap in KB/s, 0 for unlimited. Worth setting when a source host also
+# serves something latency-sensitive from the same disk.
+BWLIMIT=0
+
+# Retention tiers.
+KEEP_HOURLY=24
+KEEP_DAILY=30
+KEEP_WEEKLY=8
+KEEP_MONTHLY=12
+
+# Path to the verb dispatcher ON THE HUB. Left as a path rather than a bare name
+# because a non-interactive ssh session does not have ~/bin on PATH.
+REMOTE_CMD="~/bin/snapfabric-remote"
+
+# ------------------------------------------------- optional: watchdog view
+# Where the watchdog runs, so `status` can show its last verdict. May be an ssh
+# alias (which supplies its own key) or user@host plus WATCHDOG_KEY.
+WATCHDOG_HOST=""
+WATCHDOG_KEY=""

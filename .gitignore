@@ -1,0 +1,18 @@
+# Operator config. Holds hostnames, key paths and the shape of an estate, and is
+# sourced as shell -- exactly what must never be committed.
+snapfabric.conf
+snapfabric.local.conf
+hosts/
+
+# Keys, in case one is ever generated inside a checkout.
+id_*
+*.pem
+*.pub
+!*.example.pub
+
+# Runtime output.
+*.log
+.snapfabric-*
+
+# macOS
+.DS_Store
