@@ -29,9 +29,13 @@ CONF="${SNAPFABRIC_CONF:-$HOME/.config/snapfabric/snapfabric.conf}"
 
 HUB="${HUB_USER:?config must set HUB_USER}@${HUB_HOST:?config must set HUB_HOST}"
 KEY="${HUB_KEY:-$HOME/.ssh/snapfabric_hub}"
+# IdentitiesOnly: authenticate with HUB_KEY and nothing else. Without it ssh
+# also offers agent and default identities, so a key that is NOT the restricted
+# hub key can answer -- bypassing the forced command, and with it the pinned
+# config path. The restriction then stops being exercised at all.
 # -p, because an estate can put its hub on a non-standard port. Hardcoding 22
 # is constraint 24, which the engine was fixed for and these two were not.
-SSH="ssh -i $KEY -p ${HUB_PORT:-22} -o BatchMode=yes -o ConnectTimeout=15 -o StrictHostKeyChecking=accept-new"
+SSH="ssh -i $KEY -o IdentitiesOnly=yes -p ${HUB_PORT:-22} -o BatchMode=yes -o ConnectTimeout=15 -o StrictHostKeyChecking=accept-new"
 # Name the program explicitly. A forced-command key ignores this and strips it;
 # an unrestricted key needs it, or ssh runs the system `ping` instead.
 REMOTE="${REMOTE_CMD:-~/bin/snapfabric-remote}"

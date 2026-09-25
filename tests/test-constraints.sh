@@ -576,6 +576,16 @@ else
   bad "prune_unblessed wrong: left [$left]"
 fi
 
+# The hub's forced command must pin the config path. snapfabric-remote otherwise
+# falls back to $HOME/.config/snapfabric/snapfabric.conf, so whether the verb API
+# answers depends on the ambient HOME of the invoking sshd session. It worked on
+# the maintainer's machine, where that file happens to exist, and failed on every
+# CI runner, where it does not -- the key authenticated, the forced command ran,
+# and the API exited "no config" before reaching a verb.
+grep -q 'command="env SNAPFABRIC_CONF=%s' "$ROOT/agents/common/snapfabric-provision.sh" \
+  && ok "the hub forced command pins the config path" \
+  || bad "the hub forced command inherits HOME — the verb API is environment-dependent"
+
 # --- 35: date patterns must not be anchored on a specific year ------------------
 if grep -rn "\^20[0-9][0-9]-" "$ROOT/agents" >/dev/null 2>&1; then
   bad "a snapshot pattern is anchored on a hardcoded year (breaks on 1 January)"
@@ -902,7 +912,8 @@ else
   bad "bootstrap no longer uses the permissive option set — first-time setup will fail"
 fi
 # The engine and verify should authenticate as the backup key and nothing else.
-for f in "$ENGINE" "$ROOT/agents/common/snapfabric-verify.sh"; do
+for f in "$ENGINE" "$ROOT/agents/common/snapfabric-verify.sh" \
+         "$ROOT/agents/common/snapfabric-status.sh" "$ROOT/agents/common/snapfabric-doctor.sh"; do
   grep -q 'IdentitiesOnly=yes' "$f" \
     && ok "$(basename "$f") authenticates with the backup key only" \
     || bad "$(basename "$f") could authenticate with an unrelated agent key"

@@ -310,8 +310,14 @@ install_hub_key(){
 
   pub=$(cat "$HUB_KEY.pub") || { bad "cannot read $HUB_KEY.pub"; return 1; }
   mkdir -p "$(dirname "$ak")"; touch "$ak"; chmod 600 "$ak"
-  line=$(printf 'command="%s/snapfabric-remote",no-agent-forwarding,no-port-forwarding,no-pty,no-user-rc %s' \
-    "$BIN_DIR" "$pub")
+  # Pin the config path into the forced command. snapfabric-remote otherwise
+  # falls back to $HOME/.config/snapfabric/snapfabric.conf, so the verb API
+  # answered or not depending on the ambient HOME of whatever sshd session
+  # invoked it. That is fragile in production and it failed outright in CI,
+  # where no such file exists -- the key authenticated, the forced command ran,
+  # and the API exited "no config" before reaching a verb.
+  line=$(printf 'command="env SNAPFABRIC_CONF=%s %s/snapfabric-remote",no-agent-forwarding,no-port-forwarding,no-pty,no-user-rc %s' \
+    "$HUB_CONF" "$BIN_DIR" "$pub")
 
   # A no-op when the line is already exactly right. Rewriting unconditionally
   # still produced the correct file, but it moved this line to the end on every

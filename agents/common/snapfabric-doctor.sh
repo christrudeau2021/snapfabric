@@ -54,8 +54,12 @@ KEY="${HUB_KEY:-$HOME/.ssh/snapfabric_watchdog}"
 # sits inside a `while read` loop. Without it, one triggered repair consumes the
 # rest of the loop's input and every remaining host is silently skipped -- the
 # hosts simply vanish from the report, with no error anywhere.
+# IdentitiesOnly: authenticate with HUB_KEY and nothing else. Without it ssh
+# also offers agent and default identities, so a key that is NOT the restricted
+# hub key can answer -- bypassing the forced command, and with it the pinned
+# config path. The restriction then stops being exercised at all.
 # -p, because an estate can put its hub on a non-standard port (constraint 24).
-SSH="ssh -n -i $KEY -p ${HUB_PORT:-22} -o BatchMode=yes -o ConnectTimeout=20 -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=$HOME/.ssh/known_hosts"
+SSH="ssh -n -i $KEY -o IdentitiesOnly=yes -p ${HUB_PORT:-22} -o BatchMode=yes -o ConnectTimeout=20 -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=$HOME/.ssh/known_hosts"
 
 # Runs as the owning user, never root: $HOME must resolve to somewhere the key
 # and state actually live.
