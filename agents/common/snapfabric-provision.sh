@@ -330,13 +330,19 @@ install_hub_key(){
 
 verify_hub_key(){
   [ "$DRY" -eq 1 ] && { step "would verify: shell denied, ping verb allowed"; return 0; }
-  local o="-i $HUB_KEY -o IdentitiesOnly=yes -o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=accept-new -p $LOCALHOST_PORT"
+  # Verify against the address `status` and `doctor` will actually use, not a
+  # hardcoded "localhost". Two reasons: it proves the key works the way the
+  # tooling will use it, and "localhost" is not always 127.0.0.1 -- on a CI
+  # runner it resolves to ::1 first, so this check failed against an sshd bound
+  # to 127.0.0.1 while the key was perfectly good.
+  local vhost="${HUB_HOST:-localhost}" vport="${HUB_PORT:-$LOCALHOST_PORT}"
+  local o="-i $HUB_KEY -o IdentitiesOnly=yes -o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=accept-new -p $vport"
   local vfail=0
 
   # 1. A shell must be refused. An unrestricted key here would mean the watchdog
   #    host owns the machine holding every backup.
   # shellcheck disable=SC2086
-  if ssh $o localhost 'echo shell-allowed' 2>/dev/null | grep -q shell-allowed; then
+  if ssh $o "$vhost" 'echo shell-allowed' 2>/dev/null | grep -q shell-allowed; then
     bad "the hub key grants a SHELL — the forced command is not in effect"; vfail=1
   else
     good "verified: hub shell denied"
@@ -344,7 +350,7 @@ verify_hub_key(){
 
   # 2. The API must actually answer, or status/doctor are dead in a subtler way.
   # shellcheck disable=SC2086
-  if ssh $o localhost "$BIN_DIR/snapfabric-remote ping" 2>/dev/null | grep -q '^ok '; then
+  if ssh $o "$vhost" "$BIN_DIR/snapfabric-remote ping" 2>/dev/null | grep -q '^ok '; then
     good "verified: hub verb API answers"
   else
     bad "the verb API did not answer — status and doctor will report UNREACHABLE"; vfail=1
